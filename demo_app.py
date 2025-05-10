@@ -50,16 +50,14 @@ if playlist_input:
             tid = track.get('id')
             track_data.append({'title': title, 'id': tid})
 
-                # Fetch BPMs one-by-one using the single-track endpoint to avoid batch 403
+                        # Fetch BPMs one-by-one using the single-track endpoint
         bpm_map = {}
         for t in track_data:
             tid = t['id']
             try:
-                features = sp.track_audio_features(tid)
-                if features and features.get('tempo') is not None:
-                    bpm_map[tid] = round(features['tempo'])
-                else:
-                    bpm_map[tid] = 'N/A'
+                feature = sp.audio_features([tid])[0] or {}
+                tempo = feature.get('tempo')
+                bpm_map[tid] = round(tempo) if tempo else 'N/A'
             except Exception:
                 bpm_map[tid] = 'N/A'
 
@@ -112,3 +110,4 @@ if playlist_input:
 
     except Exception as e:
         st.error(f"Error fetching playlist or audio features: {e}")
+
