@@ -3,6 +3,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
+from urllib.parse import urlparse, parse_qs
 
 # Load credentials from .env
 load_dotenv()
@@ -21,12 +22,12 @@ st.title("🎵 BPM Sorter - Real Spotify Playlist")
 auth_url = sp_oauth.get_authorize_url()
 st.markdown(f"[Click here to log in with Spotify]({auth_url})")
 
-# Step 2: Prompt for redirected URL
-redirect_url = st.text_input("After logging in, paste the full redirected URL here:")
+# Automatically parse ?code=... from URL if present
+query_params = st.experimental_get_query_params()
+code = query_params.get("code", [None])[0]
 
-if redirect_url:
+if code:
     try:
-        code = sp_oauth.parse_response_code(redirect_url)
         token_info = sp_oauth.get_access_token(code, as_dict=True)
         sp = Spotify(auth=token_info["access_token"])
 
@@ -118,4 +119,4 @@ if redirect_url:
                         st.write("(No tracks matched this range.)")
 
     except Exception as e:
-        st.error("⚠️ Something went wrong with authentication. Please check the redirect URL and try again.")
+        st.error("⚠️ Something went wrong with authentication. Please try logging in again.")
