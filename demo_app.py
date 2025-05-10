@@ -1,9 +1,10 @@
 import os
 import streamlit as st
+import requests
 from dotenv import load_dotenv
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse
 
 # Load credentials from .env
 load_dotenv()
@@ -12,18 +13,21 @@ load_dotenv()
 client_credentials = SpotifyClientCredentials()
 sp = Spotify(auth_manager=client_credentials)
 
+# Get a fresh token for manual requests
+token_info = client_credentials.get_access_token(as_dict=True)
+auth_header = {"Authorization": f"Bearer {token_info['access_token']}"}
+
 st.title("🎵 BPM Sorter - Public Spotify Playlist")
 
-# Step: Ask for public playlist URL/ID
-def extract_playlist_id(url):
-    # If full URL, parse path /playlist/{id}
+# Helper: extract playlist ID from URL or ID input
+def extract_playlist_id(url_or_id):
     try:
-        parsed = urlparse(url)
+        parsed = urlparse(url_or_id)
         if 'playlist' in parsed.path:
             return parsed.path.split('/')[-1]
     except:
         pass
-    return url  # assume user provided ID
+    return url_or_id
 
 playlist_input = st.text_input(
     "Enter a public Spotify playlist URL or ID:",
@@ -43,22 +47,27 @@ if playlist_input:
 
         # Prepare track data
         track_data = []
-        ids = []
         for item in tracks:
             track = item.get('track')
             if not track:
                 continue
-            title = track.get('name')
-            tid = track.get('id')
+            title = track['name']
+            tid = track['id']
             track_data.append({'title': title, 'id': tid})
-            ids.append(tid)
 
-        # Fetch BPMs individually to avoid batch 403
+        # Fetch BPMs one-by-one using single-track endpoint
         bpm_map = {}
-        for tid in ids:
-            features = sp.audio_features([tid])[0]
-            if features and features.get('tempo'):
-                bpm_map[tid] = round(features['tempo'])
+        for t in track_data:
+            tid = t['id']
+            url = f"https://api.spotify.com/v1/audio-features/{tid}"
+            resp = requests.get(url, headers=auth_header)
+            if resp.status_code == 200:
+                data = resp.json()
+                tempo = data.get('tempo')
+                if tempo:
+                    bpm_map[tid] = round(tempo)
+            else:
+                bpm_map[tid] = 'N/A'
 
         # Display raw tempos
         table = [{'Title': t['title'], 'Raw BPM': bpm_map.get(t['id'], 'N/A')} for t in track_data]
@@ -94,12 +103,11 @@ if playlist_input:
                 bmaps = {label: [] for label, _, _ in bucket_ranges}
                 for row in corrected:
                     bpm = row['Corrected BPM']
-                    if bpm == 'N/A':
-                        continue
-                    for label, lo, hi in bucket_ranges:
-                        if lo <= bpm <= hi:
-                            bmaps[label].append(f"{row['Title']} ({bpm} BPM)")
-                            break
+                    if isinstance(bpm, int):
+                        for label, lo, hi in bucket_ranges:
+                            if lo <= bpm <= hi:
+                                bmaps[label].append(f"{row['Title']} ({bpm} BPM)")
+                                break
                 # Show buckets
                 for label, items in bmaps.items():
                     st.subheader(f"{label}")
