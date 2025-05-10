@@ -1,6 +1,5 @@
 import os
 import streamlit as st
-import requests
 from dotenv import load_dotenv
 from spotipy import Spotify
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -12,10 +11,6 @@ load_dotenv()
 # Initialize Spotify client credentials (no user login needed)
 client_credentials = SpotifyClientCredentials()
 sp = Spotify(auth_manager=client_credentials)
-
-# Get a fresh token for manual requests
-token_info = client_credentials.get_access_token(as_dict=True)
-auth_header = {"Authorization": f"Bearer {token_info['access_token']}"}
 
 st.title("🎵 BPM Sorter - Public Spotify Playlist")
 
@@ -51,21 +46,17 @@ if playlist_input:
             track = item.get('track')
             if not track:
                 continue
-            title = track['name']
-            tid = track['id']
+            title = track.get('name')
+            tid = track.get('id')
             track_data.append({'title': title, 'id': tid})
 
-        # Fetch BPMs one-by-one using single-track endpoint
+        # Fetch BPMs one-by-one using Spotipy
         bpm_map = {}
         for t in track_data:
             tid = t['id']
-            url = f"https://api.spotify.com/v1/audio-features/{tid}"
-            resp = requests.get(url, headers=auth_header)
-            if resp.status_code == 200:
-                data = resp.json()
-                tempo = data.get('tempo')
-                if tempo:
-                    bpm_map[tid] = round(tempo)
+            features = sp.audio_features([tid])
+            if features and features[0] and features[0].get('tempo') is not None:
+                bpm_map[tid] = round(features[0]['tempo'])
             else:
                 bpm_map[tid] = 'N/A'
 
