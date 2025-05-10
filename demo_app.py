@@ -2,100 +2,85 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 from spotipy import Spotify
-from spotipy.oauth2 import SpotifyOAuth
+from spotipy.oauth2 import SpotifyClientCredentials
 from urllib.parse import urlparse, parse_qs
 
 # Load credentials from .env
 load_dotenv()
 
-# Set up Spotify auth manually for Streamlit Cloud
-scope = "playlist-read-private user-library-read"
-sp_oauth = SpotifyOAuth(
-    scope=scope,
-    redirect_uri="https://example.com/spotify-done.html",  # non-Streamlit dummy page
-    show_dialog=True
+# Initialize Spotify client credentials (no user login needed)
+client_credentials = SpotifyClientCredentials()
+sp = Spotify(auth_manager=client_credentials)
+
+st.title("🎵 BPM Sorter - Public Spotify Playlist")
+
+# Step: Ask for public playlist URL/ID
+def extract_playlist_id(url):
+    # If full URL, parse path /playlist/{id}
+    try:
+        parsed = urlparse(url)
+        if 'playlist' in parsed.path:
+            return parsed.path.split('/')[-1]
+    except:
+        pass
+    return url  # assume user provided ID
+
+playlist_input = st.text_input(
+    "Enter a public Spotify playlist URL or ID:",
+    placeholder="https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
 )
 
-st.title("🎵 BPM Sorter - Real Spotify Playlist")
-
-# Step 1: Get auth URL and show login instructions
-auth_url = sp_oauth.get_authorize_url()
-st.markdown(f"""
-    <p>
-        <a href='{auth_url}' target='_blank' rel='noopener noreferrer'>Click here to log in with Spotify</a>.<br>
-        This will open Spotify in a <strong>new tab</strong>.<br>
-        You will be redirected to a confirmation page. <strong>Copy the full URL</strong> from the address bar and paste it below.
-    </p>
-""", unsafe_allow_html=True)
-
-redirect_url = st.text_input("Paste the full URL you were redirected to here:")
-
-if redirect_url:
+if playlist_input:
+    playlist_id = extract_playlist_id(playlist_input)
     try:
-        code = sp_oauth.parse_response_code(redirect_url)
-        token_info = sp_oauth.get_access_token(code, as_dict=True)
-        sp = Spotify(auth=token_info["access_token"])
-
-        me = sp.current_user()
-        st.markdown(f"**Logged in as:** {me['display_name']} ({me['id']})")
-
-        playlists = sp.current_user_playlists(limit=50)["items"]
-        playlist_names = [p["name"] for p in playlists]
-        selected_playlist = st.selectbox("Select a playlist to analyze:", playlist_names)
-
-        playlist_id = next(p["id"] for p in playlists if p["name"] == selected_playlist)
-
-        # Get tracks from selected playlist
+        # Fetch playlist tracks
         tracks = []
         results = sp.playlist_tracks(playlist_id)
-        tracks.extend(results["items"])
-        while results["next"]:
+        tracks.extend(results['items'])
+        while results.get('next'):
             results = sp.next(results)
-            tracks.extend(results["items"])
+            tracks.extend(results['items'])
 
-        # Extract titles and IDs
-        track_data = [{"title": t["track"]["name"], "id": t["track"]["id"]} for t in tracks if t["track"] and t["track"]["id"]]
+        # Prepare track data
+        track_data = []
+        ids = []
+        for item in tracks:
+            track = item.get('track')
+            if not track:
+                continue
+            title = track.get('name')
+            tid = track.get('id')
+            track_data.append({'title': title, 'id': tid})
+            ids.append(tid)
 
-        # Fetch BPMs immediately
-        ids = [t["id"] for t in track_data]
+        # Fetch BPMs individually to avoid batch 403
         bpm_map = {}
-        for i in range(0, len(ids), 100):
-            audio_features = sp.audio_features(ids[i:i+100])
-            for f in audio_features:
-                if f:
-                    bpm_map[f["id"]] = round(f["tempo"])
+        for tid in ids:
+            features = sp.audio_features([tid])[0]
+            if features and features.get('tempo'):
+                bpm_map[tid] = round(features['tempo'])
 
-        # Add BPMs to display
-        track_table = []
-        for t in track_data:
-            bpm = bpm_map.get(t["id"], "N/A")
-            track_table.append({"title": t["title"], "bpm": bpm})
+        # Display raw tempos
+        table = [{'Title': t['title'], 'Raw BPM': bpm_map.get(t['id'], 'N/A')} for t in track_data]
+        st.subheader("Tracks and Raw BPM")
+        st.table(table)
 
-        st.subheader("Fetched Tracks with Raw BPM")
-        st.table(track_table)
-
-        # Correct BPMs
+        # Correct BPMs when clicking button
         if st.button("Correct BPMs (Double if < 110)"):
-            corrected_tracks = []
-            for t in track_data:
-                bpm = bpm_map.get(t["id"])
-                if bpm is None:
-                    continue
-                corrected_bpm = bpm * 2 if bpm < 110 else bpm
-                corrected_tracks.append({
-                    "title": t["title"],
-                    "bpm": round(corrected_bpm)
-                })
-            st.session_state.corrected_tracks = corrected_tracks
-            st.success("BPMs corrected!")
-
-        # Show corrected BPMs and sort
-        if "corrected_tracks" in st.session_state:
+            corrected = []
+            for row in table:
+                bpm = row['Raw BPM']
+                if bpm == 'N/A':
+                    corrected_bpm = 'N/A'
+                else:
+                    corrected_bpm = bpm * 2 if bpm < 110 else bpm
+                corrected.append({'Title': row['Title'], 'Corrected BPM': corrected_bpm})
             st.subheader("Corrected BPMs")
-            st.table(st.session_state.corrected_tracks)
+            st.table(corrected)
 
-            st.subheader("Define BPM Ranges")
-            bpm_ranges = []
+            # Define ranges and bucket
+            st.subheader("Define BPM Ranges and Bucket")
+            bucket_ranges = []
             for label, default in [
                 ("110-155 Chill Opener", (110, 155)),
                 ("156-165", (156, 165)),
@@ -103,22 +88,25 @@ if redirect_url:
                 ("181-220", (181, 220))
             ]:
                 lo, hi = st.slider(label, 0, 300, default)
-                bpm_ranges.append((label, lo, hi))
+                bucket_ranges.append((label, lo, hi))
 
-            if st.button("Sort Tracks into Playlists"):
-                playlists = {label: [] for label, _, _ in bpm_ranges}
-                for track in st.session_state.corrected_tracks:
-                    bpm = track["bpm"]
-                    for label, lo, hi in bpm_ranges:
+            if st.button("Bucket Tracks"):
+                bmaps = {label: [] for label, _, _ in bucket_ranges}
+                for row in corrected:
+                    bpm = row['Corrected BPM']
+                    if bpm == 'N/A':
+                        continue
+                    for label, lo, hi in bucket_ranges:
                         if lo <= bpm <= hi:
-                            playlists[label].append(f"{track['title']} ({bpm} BPM)")
+                            bmaps[label].append(f"{row['Title']} ({bpm} BPM)")
                             break
-                for label, tracks in playlists.items():
-                    st.subheader(f"Playlist: {label}")
-                    if tracks:
-                        st.write("\n".join(tracks))
+                # Show buckets
+                for label, items in bmaps.items():
+                    st.subheader(f"{label}")
+                    if items:
+                        st.write("\n".join(items))
                     else:
-                        st.write("(No tracks matched this range.)")
+                        st.write("(No tracks)")
 
     except Exception as e:
-        st.error("⚠️ Something went wrong with authentication. Please try again and make sure you pasted the full redirected URL.")
+        st.error(f"Error fetching playlist or audio features: {e}")
