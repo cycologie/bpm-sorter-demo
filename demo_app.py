@@ -15,6 +15,10 @@ DUMMY_TRACKS = [
 # Initialize session state
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+if "corrected_tracks" not in st.session_state:
+    st.session_state.corrected_tracks = None
+if "playlists" not in st.session_state:
+    st.session_state.playlists = None
 
 # Login screen
 if not st.session_state.logged_in:
@@ -31,35 +35,46 @@ if not st.session_state.logged_in:
 # Main app UI
 else:
     st.title("Demo BPM Sorter (Dummy Data)")
-    st.subheader("Your Liked Songs with BPM")
+    st.subheader("Your Liked Songs with Raw BPM")
     st.table(DUMMY_TRACKS)
 
-    st.subheader("Define BPM Ranges")
-    bpm_ranges = []
-    for label, default in [
-        ("110-155 Chill Opener", (110, 155)),
-        ("156-165", (156, 165)),
-        ("166-180", (166, 180)),
-        ("181-220", (181, 220))
-    ]:
-        lo, hi = st.slider(label, 0, 300, default)
-        bpm_ranges.append((label, lo, hi))
-
-    if st.button("Sync Playlists"):
-        # Simulate bucketing songs into playlists
-        playlists = {label: [] for label, _, _ in bpm_ranges}
+    if st.button("Correct BPMs (Double if < 110)"):
+        corrected = []
         for track in DUMMY_TRACKS:
             bpm = track["bpm"]
             corrected_bpm = bpm * 2 if bpm < 110 else bpm
-            for label, lo, hi in bpm_ranges:
-                if lo <= corrected_bpm <= hi:
-                    playlists[label].append(f"{track['title']} ({corrected_bpm} BPM)")
-                    break
+            corrected.append({"title": track["title"], "bpm": corrected_bpm})
+        st.session_state.corrected_tracks = corrected
+        st.success("Corrected BPMs using doubling rule.")
 
-        st.success("Playlists created with your defined ranges!")
-        st.info("(This is a demo app with no real Spotify integration.)")
+    if st.session_state.corrected_tracks:
+        st.subheader("Corrected BPMs")
+        st.table(st.session_state.corrected_tracks)
 
-        for label, tracks in playlists.items():
+        st.subheader("Define BPM Ranges")
+        bpm_ranges = []
+        for label, default in [
+            ("110-155 Chill Opener", (110, 155)),
+            ("156-165", (156, 165)),
+            ("166-180", (166, 180)),
+            ("181-220", (181, 220))
+        ]:
+            lo, hi = st.slider(label, 0, 300, default)
+            bpm_ranges.append((label, lo, hi))
+
+        if st.button("Sort Tracks into Playlists"):
+            playlists = {label: [] for label, _, _ in bpm_ranges}
+            for track in st.session_state.corrected_tracks:
+                bpm = track["bpm"]
+                for label, lo, hi in bpm_ranges:
+                    if lo <= bpm <= hi:
+                        playlists[label].append(f"{track['title']} ({bpm} BPM)")
+                        break
+            st.session_state.playlists = playlists
+            st.success("Tracks sorted into playlists.")
+
+    if st.session_state.playlists:
+        for label, tracks in st.session_state.playlists.items():
             st.subheader(f"Playlist: {label}")
             if tracks:
                 st.write("\n".join(tracks))
