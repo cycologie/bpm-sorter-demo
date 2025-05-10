@@ -9,7 +9,11 @@ load_dotenv()
 
 # Set up Spotify auth manually for Streamlit Cloud
 scope = "playlist-read-private user-library-read"
-sp_oauth = SpotifyOAuth(scope=scope, show_dialog=True)
+sp_oauth = SpotifyOAuth(
+    scope=scope,
+    redirect_uri="https://bpm-sorter-demo.streamlit.app",
+    show_dialog=True
+)
 
 st.title("🎵 BPM Sorter - Real Spotify Playlist")
 
