@@ -1,53 +1,67 @@
+import os
 import streamlit as st
-import random
+from dotenv import load_dotenv
+from spotipy import Spotify
+from spotipy.oauth2 import SpotifyOAuth
 
-# -- Demo credentials --
-DEMO_EMAIL = "demo@cycologie.ca"
-DEMO_PASSWORD = "DemoPass123!"
+# Load credentials from .env
+load_dotenv()
 
-# Generate 30 dummy tracks with random BPMs between 80 and 200
-random.seed(42)
-DUMMY_TRACKS = [
-    {"title": f"Track {i+1}", "bpm": random.randint(80, 200)}
-    for i in range(30)
-]
+# Authenticate with Spotify using OAuth
+scope = "playlist-read-private user-library-read"
+sp_oauth = SpotifyOAuth(scope=scope)
+token_info = sp_oauth.get_access_token(as_dict=True)
+sp = Spotify(auth=token_info["access_token"])
 
-# Initialize session state
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "corrected_tracks" not in st.session_state:
-    st.session_state.corrected_tracks = None
-if "playlists" not in st.session_state:
-    st.session_state.playlists = None
+# Get user's playlists
+st.title("🎵 BPM Sorter - Real Spotify Playlist")
+me = sp.current_user()
+st.markdown(f"**Logged in as:** {me['display_name']} ({me['id']})")
 
-# Login screen
-if not st.session_state.logged_in:
-    st.title("Demo BPM Sorter Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-    if st.button("Login"):
-        if email == DEMO_EMAIL and password == DEMO_PASSWORD:
-            st.session_state.logged_in = True
-            st.success("Logged in successfully!")
-        else:
-            st.error("Invalid credentials. Try demo@cycologie.ca / DemoPass123!")
+playlists = sp.current_user_playlists(limit=50)["items"]
+playlist_names = [p["name"] for p in playlists]
+selected_playlist = st.selectbox("Select a playlist to analyze:", playlist_names)
 
-# Main app UI
-else:
-    st.title("Demo BPM Sorter (Dummy Data)")
-    st.subheader("Your Liked Songs with Raw BPM")
-    st.table(DUMMY_TRACKS)
+playlist_id = None
+for p in playlists:
+    if p["name"] == selected_playlist:
+        playlist_id = p["id"]
+        break
 
+if playlist_id:
+    # Get tracks from selected playlist
+    tracks = []
+    results = sp.playlist_tracks(playlist_id)
+    tracks.extend(results["items"])
+    while results["next"]:
+        results = sp.next(results)
+        tracks.extend(results["items"])
+
+    # Display track titles
+    st.subheader("Fetched Tracks")
+    track_data = [{"title": t["track"]["name"], "id": t["track"]["id"]} for t in tracks if t["track"]]
+    st.table(track_data)
+
+    # Correct BPMs button
     if st.button("Correct BPMs (Double if < 110)"):
-        corrected = []
-        for track in DUMMY_TRACKS:
-            bpm = track["bpm"]
-            corrected_bpm = bpm * 2 if bpm < 110 else bpm
-            corrected.append({"title": track["title"], "bpm": corrected_bpm})
-        st.session_state.corrected_tracks = corrected
-        st.success("Corrected BPMs using doubling rule.")
+        ids = [t["id"] for t in track_data if t["id"] is not None]
+        corrected_tracks = []
+        for i in range(0, len(ids), 100):
+            audio_features = sp.audio_features(ids[i:i+100])
+            for track, features in zip(track_data[i:i+100], audio_features):
+                if not features:
+                    continue
+                bpm = features["tempo"]
+                corrected_bpm = bpm * 2 if bpm < 110 else bpm
+                corrected_tracks.append({
+                    "title": track["title"],
+                    "bpm": round(corrected_bpm)
+                })
+        st.session_state.corrected_tracks = corrected_tracks
+        st.success("BPMs corrected!")
 
-    if st.session_state.corrected_tracks:
+    # Show corrected BPMs and sort
+    if "corrected_tracks" in st.session_state:
         st.subheader("Corrected BPMs")
         st.table(st.session_state.corrected_tracks)
 
@@ -70,13 +84,9 @@ else:
                     if lo <= bpm <= hi:
                         playlists[label].append(f"{track['title']} ({bpm} BPM)")
                         break
-            st.session_state.playlists = playlists
-            st.success("Tracks sorted into playlists.")
-
-    if st.session_state.playlists:
-        for label, tracks in st.session_state.playlists.items():
-            st.subheader(f"Playlist: {label}")
-            if tracks:
-                st.write("\n".join(tracks))
-            else:
-                st.write("(No tracks matched this range.)")
+            for label, tracks in playlists.items():
+                st.subheader(f"Playlist: {label}")
+                if tracks:
+                    st.write("\n".join(tracks))
+                else:
+                    st.write("(No tracks matched this range.)")
