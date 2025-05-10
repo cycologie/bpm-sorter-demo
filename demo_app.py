@@ -23,8 +23,8 @@ auth_url = sp_oauth.get_authorize_url()
 st.markdown(f'<a href="{auth_url}" target="_blank">Click here to log in with Spotify</a>', unsafe_allow_html=True)
 
 # Automatically parse ?code=... from URL if present
-query_params = st.query_params()
-code = query_params.get("code", [None])[0]
+query_params = st.query_params
+code = query_params.get("code", [None])[0] if query_params else None
 
 if code:
     try:
@@ -71,19 +71,16 @@ if code:
 
         # Correct BPMs
         if st.button("Correct BPMs (Double if < 110)"):
-            ids = [t["id"] for t in track_data if t["id"] is not None]
             corrected_tracks = []
-            for i in range(0, len(ids), 100):
-                audio_features = sp.audio_features(ids[i:i+100])
-                for track, features in zip(track_data[i:i+100], audio_features):
-                    if not features:
-                        continue
-                    bpm = features["tempo"]
-                    corrected_bpm = bpm * 2 if bpm < 110 else bpm
-                    corrected_tracks.append({
-                        "title": track["title"],
-                        "bpm": round(corrected_bpm)
-                    })
+            for t in track_data:
+                bpm = bpm_map.get(t["id"])
+                if bpm is None:
+                    continue
+                corrected_bpm = bpm * 2 if bpm < 110 else bpm
+                corrected_tracks.append({
+                    "title": t["title"],
+                    "bpm": round(corrected_bpm)
+                })
             st.session_state.corrected_tracks = corrected_tracks
             st.success("BPMs corrected!")
 
