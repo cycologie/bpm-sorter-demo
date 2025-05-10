@@ -47,9 +47,26 @@ if redirect_url:
             results = sp.next(results)
             tracks.extend(results["items"])
 
-        st.subheader("Fetched Tracks")
-        track_data = [{"title": t["track"]["name"], "id": t["track"]["id"]} for t in tracks if t["track"]]
-        st.table(track_data)
+        # Extract titles and IDs
+        track_data = [{"title": t["track"]["name"], "id": t["track"]["id"]} for t in tracks if t["track"] and t["track"]["id"]]
+
+        # Fetch BPMs immediately
+        ids = [t["id"] for t in track_data]
+        bpm_map = {}
+        for i in range(0, len(ids), 100):
+            audio_features = sp.audio_features(ids[i:i+100])
+            for f in audio_features:
+                if f:
+                    bpm_map[f["id"]] = round(f["tempo"])
+
+        # Add BPMs to display
+        track_table = []
+        for t in track_data:
+            bpm = bpm_map.get(t["id"], "N/A")
+            track_table.append({"title": t["title"], "bpm": bpm})
+
+        st.subheader("Fetched Tracks with Raw BPM")
+        st.table(track_table)
 
         # Correct BPMs
         if st.button("Correct BPMs (Double if < 110)"):
