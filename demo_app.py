@@ -20,7 +20,13 @@ st.title("🎵 BPM Sorter - Real Spotify Playlist")
 
 # Step 1: Get auth URL and show login button
 auth_url = sp_oauth.get_authorize_url()
-st.markdown(f'Click [here]({auth_url}) to log in with Spotify manually. After login, you will be redirected. Stay on the Spotify tab. Return to this app and press Enter.', unsafe_allow_html=True)
+st.markdown(f"""
+    <p>
+        <a href='{auth_url}' target='_blank' rel='noopener noreferrer'>Click here to log in with Spotify</a>.<br>
+        This will open Spotify in a <strong>new tab</strong>.<br>
+        <strong>Do not close that tab.</strong> Once you're logged in, come back to this window and press Enter or refresh to continue.
+    </p>
+""", unsafe_allow_html=True)
 # Automatically parse ?code=... from URL if present
 query_params = st.query_params
 code = query_params.get("code", [None])[0] if query_params else None
