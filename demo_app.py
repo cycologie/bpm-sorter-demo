@@ -12,27 +12,27 @@ load_dotenv()
 scope = "playlist-read-private user-library-read"
 sp_oauth = SpotifyOAuth(
     scope=scope,
-    redirect_uri="https://bpm-sorter-demo.streamlit.app",
+    redirect_uri="https://example.com/spotify-done.html",  # non-Streamlit dummy page
     show_dialog=True
 )
 
 st.title("🎵 BPM Sorter - Real Spotify Playlist")
 
-# Step 1: Get auth URL and show login button
+# Step 1: Get auth URL and show login instructions
 auth_url = sp_oauth.get_authorize_url()
 st.markdown(f"""
     <p>
         <a href='{auth_url}' target='_blank' rel='noopener noreferrer'>Click here to log in with Spotify</a>.<br>
         This will open Spotify in a <strong>new tab</strong>.<br>
-        <strong>Do not close that tab.</strong> Once you're logged in, come back to this window and press Enter or refresh to continue.
+        You will be redirected to a confirmation page. <strong>Copy the full URL</strong> from the address bar and paste it below.
     </p>
 """, unsafe_allow_html=True)
-# Automatically parse ?code=... from URL if present
-query_params = st.query_params
-code = query_params.get("code", [None])[0] if query_params else None
 
-if code:
+redirect_url = st.text_input("Paste the full URL you were redirected to here:")
+
+if redirect_url:
     try:
+        code = sp_oauth.parse_response_code(redirect_url)
         token_info = sp_oauth.get_access_token(code, as_dict=True)
         sp = Spotify(auth=token_info["access_token"])
 
@@ -121,4 +121,4 @@ if code:
                         st.write("(No tracks matched this range.)")
 
     except Exception as e:
-        st.error("⚠️ Something went wrong with authentication. Please try logging in again.")
+        st.error("⚠️ Something went wrong with authentication. Please try again and make sure you pasted the full redirected URL.")
