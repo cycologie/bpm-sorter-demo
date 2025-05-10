@@ -50,15 +50,15 @@ if playlist_input:
             tid = track.get('id')
             track_data.append({'title': title, 'id': tid})
 
-                        # Fetch BPMs one-by-one using the single-track endpoint
+                                # Fetch BPMs one-by-one using the audio-analysis endpoint (bypasses extended access)
         bpm_map = {}
         for t in track_data:
             tid = t['id']
             try:
-                feature = sp.audio_features([tid])[0] or {}
-                tempo = feature.get('tempo')
+                analysis = sp.audio_analysis(tid)
+                tempo = analysis.get('track', {}).get('tempo')
                 bpm_map[tid] = round(tempo) if tempo else 'N/A'
-            except Exception:
+            except Exception as e:
                 bpm_map[tid] = 'N/A'
 
         # Display raw tempos
@@ -110,4 +110,3 @@ if playlist_input:
 
     except Exception as e:
         st.error(f"Error fetching playlist or audio features: {e}")
-
