@@ -50,14 +50,17 @@ if playlist_input:
             tid = track.get('id')
             track_data.append({'title': title, 'id': tid})
 
-        # Fetch BPMs one-by-one using Spotipy
+                # Fetch BPMs one-by-one using the single-track endpoint to avoid batch 403
         bpm_map = {}
         for t in track_data:
             tid = t['id']
-            features = sp.audio_features([tid])
-            if features and features[0] and features[0].get('tempo') is not None:
-                bpm_map[tid] = round(features[0]['tempo'])
-            else:
+            try:
+                features = sp.track_audio_features(tid)
+                if features and features.get('tempo') is not None:
+                    bpm_map[tid] = round(features['tempo'])
+                else:
+                    bpm_map[tid] = 'N/A'
+            except Exception:
                 bpm_map[tid] = 'N/A'
 
         # Display raw tempos
